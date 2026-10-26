@@ -3,6 +3,7 @@ const TONES: Record<string, string> = {
   PENDING: "bg-amber-100 text-amber-800",
   APPROVED: "bg-blue-100 text-blue-800",
   REJECTED: "bg-gray-200 text-gray-700",
+  EXECUTING: "bg-indigo-100 text-indigo-800",
   EXECUTED: "bg-green-100 text-green-800",
   FAILED: "bg-red-100 text-red-800",
   // roles

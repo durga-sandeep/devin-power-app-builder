@@ -55,13 +55,14 @@ model RefundRequest {
   amountCents    Int
   currency       String    @default("USD")
   reason         String
-  status         String    @default("PENDING") // PENDING | APPROVED | REJECTED | EXECUTED | FAILED
+  status         String    @default("PENDING") // PENDING | APPROVED | REJECTED | EXECUTING | EXECUTED | FAILED
   createdBy      String // User.id
   createdAt      DateTime  @default(now())
   decidedBy      String?
   decidedAt      DateTime?
   decisionNote   String?
-  idempotencyKey String?   @unique // set when execution is claimed
+  idempotencyKey     String?   @unique // set when execution is claimed
+  executionStartedAt DateTime? // set with the claim; lets an interrupted execution be resumed
   externalRef    String? // from the payment provider
 
   @@index([status])

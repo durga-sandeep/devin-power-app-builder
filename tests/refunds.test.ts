@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { ForbiddenError } from "@/lib/platform/auth";
 import { fakePayments } from "@/lib/payments/fake";
-import { createRefund, decideRefund, executeRefund, listRefunds } from "@/app/(apps)/refunds/service";
+import { createRefund, decideRefund, executeRefund, EXECUTION_STALE_MS, listRefunds } from "@/app/(apps)/refunds/service";
 import { parseAmountToCents } from "@/app/(apps)/refunds/format";
 import { actAs, USERS } from "./helpers";
 
@@ -24,7 +24,11 @@ const trail = (id: string) =>
 
 beforeEach(() => {
   fakePayments.calls.length = 0;
+  fakePayments.seen.clear();
 });
+
+const markInterrupted = (id: string) =>
+  prisma.refundRequest.update({ where: { id }, data: { executionStartedAt: new Date(Date.now() - EXECUTION_STALE_MS - 1000) } });
 
 describe("list/view", () => {
   it("viewer can list", async () => {
@@ -152,7 +156,8 @@ describe("execute", () => {
     expect(fakePayments.calls).toHaveLength(1);
     const t = await trail(r.id);
     expect(t.map((e) => e.action)).toEqual(["REFUND_CREATED", "REFUND_APPROVED", "REFUND_EXECUTION_STARTED", "REFUND_EXECUTED"]);
-    expect(t[3]).toMatchObject({ actor: USERS.checker, before: { status: "APPROVED" }, after: { status: "EXECUTED", externalRef: done.externalRef } });
+    expect(t[2]).toMatchObject({ before: { status: "APPROVED" }, after: { status: "EXECUTING", idempotencyKey: key } });
+    expect(t[3]).toMatchObject({ actor: USERS.checker, before: { status: "EXECUTING" }, after: { status: "EXECUTED", externalRef: done.externalRef } });
   });
 
   it("viewer and maker get 403 and the provider is never called", async () => {
@@ -186,6 +191,57 @@ describe("execute", () => {
     expect((await prisma.refundRequest.findUnique({ where: { id: r.id } }))?.status).toBe("EXECUTED");
   });
 
+  it("a same-key replay while the execution is in flight returns the EXECUTING row without calling the provider", async () => {
+    const r = await approved();
+    actAs("checker");
+    const key = crypto.randomUUID();
+    const first = executeRefund(r.id, key);
+    await new Promise((res) => setTimeout(res, 50));
+    const inFlight = await executeRefund(r.id, key);
+    expect(inFlight.status).toBe("EXECUTING");
+    expect((await first).status).toBe("EXECUTED");
+    expect(fakePayments.calls).toHaveLength(1);
+    expect((await trail(r.id)).filter((e) => e.action === "REFUND_EXECUTED")).toHaveLength(1);
+  });
+
+  it("a different key while EXECUTING is refused", async () => {
+    const r = await approved();
+    actAs("checker");
+    const key = crypto.randomUUID();
+    const first = executeRefund(r.id, key);
+    await new Promise((res) => setTimeout(res, 50));
+    await expect(executeRefund(r.id, crypto.randomUUID())).rejects.toThrow(/different key/);
+    await first;
+    expect(fakePayments.calls).toHaveLength(1);
+  });
+
+  it("an interrupted execution (stale EXECUTING) is resumed with the stored key and reaches EXECUTED", async () => {
+    const r = await approved(3100);
+    const key = crypto.randomUUID();
+    // Simulate a crash after the claim: row is EXECUTING with the key, provider never answered.
+    await prisma.refundRequest.update({ where: { id: r.id }, data: { status: "EXECUTING", idempotencyKey: key } });
+    await markInterrupted(r.id);
+    actAs("admin");
+    const done = await executeRefund(r.id, key);
+    expect(done.status).toBe("EXECUTED");
+    expect(fakePayments.calls).toHaveLength(1);
+    const actions = (await trail(r.id)).map((e) => e.action);
+    expect(actions.slice(-2)).toEqual(["REFUND_EXECUTION_RESUMED", "REFUND_EXECUTED"]);
+  });
+
+  it("resuming after the provider already paid returns the provider's original ref (no duplicate refund)", async () => {
+    const r = await approved(3200);
+    const key = crypto.randomUUID();
+    const original = await fakePayments.refund({ amountCents: 3200, currency: "USD", idempotencyKey: key });
+    fakePayments.calls.length = 0;
+    await prisma.refundRequest.update({ where: { id: r.id }, data: { status: "EXECUTING", idempotencyKey: key } });
+    await markInterrupted(r.id);
+    actAs("checker");
+    const done = await executeRefund(r.id, key);
+    expect(done).toMatchObject({ status: "EXECUTED", externalRef: original.externalRef });
+    expect(fakePayments.calls).toHaveLength(1);
+  });
+
   it("a different key after execution is refused", async () => {
     const r = await approved();
     actAs("checker");
@@ -208,7 +264,7 @@ describe("execute", () => {
     expect(done.externalRef).toBeNull();
     expect(done.decisionNote).toMatch(/\.13/);
     const t = await trail(r.id);
-    expect(t.at(-1)).toMatchObject({ action: "REFUND_FAILED", before: { status: "APPROVED" }, after: { status: "FAILED" } });
+    expect(t.at(-1)).toMatchObject({ action: "REFUND_FAILED", before: { status: "EXECUTING" }, after: { status: "FAILED" } });
   });
 });
 
@@ -220,5 +276,29 @@ describe("audit log is append-only", () => {
       { encoding: "utf8" },
     );
     expect(out.trim()).toBe("");
+  });
+});
+
+describe("seed data", () => {
+  it("approval audit snapshots are consistent: REQUESTED.after is PENDING and equals the decision's before", async () => {
+    const approvals = await prisma.approvalRequest.findMany({ where: { app: "refunds", status: { in: ["APPROVED", "REJECTED"] } } });
+    expect(approvals.length).toBeGreaterThan(0);
+    for (const a of approvals) {
+      const events = await prisma.auditEvent.findMany({ where: { entity: "ApprovalRequest", entityId: a.id }, orderBy: { at: "asc" } });
+      expect(events.map((e) => e.action)).toEqual(["APPROVAL_REQUESTED", `APPROVAL_${a.status}`]);
+      expect(events[0].after).toMatchObject({ status: "PENDING", decidedBy: null });
+      expect(events[1].before).toEqual(events[0].after);
+      expect(events[1].after).toMatchObject({ status: a.status, decidedBy: a.decidedBy });
+    }
+  });
+
+  it("executed/failed seed refunds went through EXECUTING", async () => {
+    const done = await prisma.refundRequest.findMany({ where: { status: { in: ["EXECUTED", "FAILED"] }, orderRef: { startsWith: "ord_7" } } });
+    for (const r of done) {
+      const events = await prisma.auditEvent.findMany({ where: { entity: "RefundRequest", entityId: r.id }, orderBy: { at: "asc" } });
+      const started = events.find((e) => e.action === "REFUND_EXECUTION_STARTED")!;
+      expect(started.after).toMatchObject({ status: "EXECUTING", idempotencyKey: r.idempotencyKey });
+      expect(events.at(-1)!.before).toEqual(started.after);
+    }
   });
 });

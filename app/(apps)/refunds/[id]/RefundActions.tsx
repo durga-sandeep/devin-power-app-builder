@@ -17,6 +17,7 @@ export function RefundActions({
   isCreator,
   canDecide,
   canExecute,
+  canResume,
   idempotencyKey,
 }: {
   refundId: string;
@@ -25,6 +26,7 @@ export function RefundActions({
   isCreator: boolean;
   canDecide: boolean;
   canExecute: boolean;
+  canResume: boolean;
   idempotencyKey: string;
 }) {
   if (status === "PENDING" && canDecide) {
@@ -61,8 +63,28 @@ export function RefundActions({
       </div>
     );
   }
+  if (status === "EXECUTING" && canResume) {
+    return (
+      <div className="rounded-md border border-amber-300 bg-amber-50 p-6">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-800">Execution interrupted</h2>
+        <p className="mt-1 text-sm text-amber-900">
+          This refund was claimed for execution but never reached a final state. Resuming re-sends the same
+          idempotency key, so the provider will not pay twice.
+        </p>
+        <ActionForm action={executeRefundAction} className="mt-4">
+          <input type="hidden" name="id" value={refundId} />
+          <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
+          <button type="submit" className={`${btn} bg-amber-700 text-white hover:bg-amber-600`}>
+            Resume execution
+          </button>
+        </ActionForm>
+      </div>
+    );
+  }
   const why =
-    status === "PENDING" && isCreator
+    status === "EXECUTING"
+      ? "Execution in progress; refresh in a moment."
+      : status === "PENDING" && isCreator
       ? "You created this request, so someone else must approve it (maker-checker)."
       : status === "PENDING"
         ? `Awaiting a decision. Your role (${role}) cannot approve this refund.`

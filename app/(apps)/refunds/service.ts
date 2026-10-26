@@ -9,7 +9,9 @@ export const APP = "refunds";
 const ENTITY = "RefundRequest";
 /** Over this amount only an admin may approve or reject. */
 export const ADMIN_APPROVAL_THRESHOLD_CENTS = 500_000;
-export const STATUSES = ["PENDING", "APPROVED", "REJECTED", "EXECUTED", "FAILED"] as const;
+export const STATUSES = ["PENDING", "APPROVED", "REJECTED", "EXECUTING", "EXECUTED", "FAILED"] as const;
+/** An EXECUTING row older than this is treated as interrupted and may be resumed with its stored key. */
+export const EXECUTION_STALE_MS = 30_000;
 export type RefundStatus = (typeof STATUSES)[number];
 
 export type CreateRefundInput = {
@@ -29,8 +31,10 @@ export function deciderRoles(refund: Pick<RefundRequest, "amountCents">): Role[]
 export function permissions(user: CurrentUser, refund: RefundRequest) {
   const canDecide =
     refund.status === "PENDING" && deciderRoles(refund).includes(user.role) && refund.createdBy !== user.id;
-  const canExecute = refund.status === "APPROVED" && (["checker", "admin"] as Role[]).includes(user.role);
-  return { canDecide, canExecute };
+  const executor = (["checker", "admin"] as Role[]).includes(user.role);
+  const canExecute = refund.status === "APPROVED" && executor;
+  const canResume = refund.status === "EXECUTING" && executor && isStale(refund);
+  return { canDecide, canExecute, canResume };
 }
 
 export async function listRefunds(status?: string) {
@@ -94,10 +98,21 @@ export async function decideRefund(id: string, decision: "APPROVED" | "REJECTED"
   });
 }
 
+function isStale(refund: Pick<RefundRequest, "executionStartedAt">) {
+  return !!refund.executionStartedAt && Date.now() - refund.executionStartedAt.getTime() > EXECUTION_STALE_MS;
+}
+
 /**
  * Executes an APPROVED refund against the payment provider. Idempotent on `idempotencyKey`:
- * the key is claimed on the row (unique column) before the provider is called, so a retry with the
- * same key returns the stored outcome instead of paying twice.
+ *
+ *   tx1  APPROVED --(claim key, status EXECUTING, executionStartedAt)--> EXECUTING   audit REFUND_EXECUTION_STARTED
+ *        provider.refund({ idempotencyKey })                                        outside any tx
+ *   tx2  EXECUTING --> EXECUTED | FAILED                                            audit REFUND_EXECUTED | REFUND_FAILED
+ *
+ * Replaying the same key: a terminal row is returned as-is; an EXECUTING row younger than
+ * EXECUTION_STALE_MS is in flight and is returned as-is (no provider call); an older one was interrupted
+ * and is resumed by calling the provider again with the same key (the provider is idempotent on it).
+ * A different key is refused once a key is stored. Audit rows are written exactly once per transition.
  */
 export async function executeRefund(id: string, idempotencyKey: string) {
   const user = await requireRole("checker", "admin");
@@ -107,20 +122,26 @@ export async function executeRefund(id: string, idempotencyKey: string) {
   const claim = await prisma.$transaction(async (tx) => {
     const refund = await tx.refundRequest.findUnique({ where: { id } });
     if (!refund) throw new Error("Refund not found");
-    if (refund.idempotencyKey === idempotencyKey) return { refund, replay: true as const };
+    if (refund.idempotencyKey === idempotencyKey) {
+      if (refund.status !== "EXECUTING") return { refund, proceed: false as const };
+      if (!isStale(refund)) return { refund, proceed: false as const };
+      await audit(tx, { actor: user.id, app: APP, entity: ENTITY, entityId: id, action: "REFUND_EXECUTION_RESUMED", before: refund, after: refund, requestId });
+      return { refund, proceed: true as const };
+    }
+    if (refund.status === "EXECUTING") throw new Error("Execution already in progress with a different key");
     if (refund.status !== "APPROVED") throw new Error(`Refund is ${refund.status}, not APPROVED`);
     if (refund.idempotencyKey) throw new Error("Execution already in progress with a different key");
-    // Optimistic claim: only one caller can move idempotencyKey from null to a value.
+    // Optimistic claim: only one caller can move the row from APPROVED/no key to EXECUTING/key.
     const { count } = await tx.refundRequest.updateMany({
       where: { id, status: "APPROVED", idempotencyKey: null },
-      data: { idempotencyKey },
+      data: { status: "EXECUTING", idempotencyKey, executionStartedAt: new Date() },
     });
     if (count !== 1) throw new Error("Execution already claimed by a concurrent request");
-    const claimed = { ...refund, idempotencyKey };
+    const claimed = (await tx.refundRequest.findUniqueOrThrow({ where: { id } })) as RefundRequest;
     await audit(tx, { actor: user.id, app: APP, entity: ENTITY, entityId: id, action: "REFUND_EXECUTION_STARTED", before: refund, after: claimed, requestId });
-    return { refund: claimed, replay: false as const };
+    return { refund: claimed, proceed: true as const };
   });
-  if (claim.replay) return claim.refund;
+  if (!claim.proceed) return claim.refund;
 
   const refund = claim.refund;
   let outcome: { status: "EXECUTED"; externalRef: string } | { status: "FAILED"; error: string };
@@ -132,14 +153,18 @@ export async function executeRefund(id: string, idempotencyKey: string) {
   }
 
   return prisma.$transaction(async (tx) => {
-    const after = await tx.refundRequest.update({
-      where: { id },
+    // Only the EXECUTING -> terminal transition is allowed; a concurrent resume that got there first wins.
+    const { count } = await tx.refundRequest.updateMany({
+      where: { id, status: "EXECUTING", idempotencyKey },
       data:
         outcome.status === "EXECUTED"
           ? { status: "EXECUTED", externalRef: outcome.externalRef }
           : { status: "FAILED", decisionNote: appendNote(refund.decisionNote, `Execution failed: ${outcome.error}`) },
     });
-    await audit(tx, { actor: user.id, app: APP, entity: ENTITY, entityId: id, action: `REFUND_${outcome.status}`, before: refund, after, requestId });
+    const after = await tx.refundRequest.findUniqueOrThrow({ where: { id } });
+    if (count === 1) {
+      await audit(tx, { actor: user.id, app: APP, entity: ENTITY, entityId: id, action: `REFUND_${outcome.status}`, before: refund, after, requestId });
+    }
     return after;
   });
 }

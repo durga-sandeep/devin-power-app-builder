@@ -66,6 +66,7 @@ export async function seedRefunds(prisma: PrismaClient) {
           decisionNote: r.decisionNote ?? null,
           idempotencyKey: r.status === "EXECUTED" || r.status === "FAILED" ? crypto.randomUUID() : null,
           externalRef: r.status === "EXECUTED" ? `fake_seed_${r.orderRef}` : null,
+          executionStartedAt: r.status === "EXECUTED" || r.status === "FAILED" ? new Date(createdAt.getTime() + 9e5) : null,
         },
       });
       const pending = { ...refund, status: "PENDING", decidedBy: null, decidedAt: null, decisionNote: null, idempotencyKey: null, externalRef: null };
@@ -87,14 +88,15 @@ export async function seedRefunds(prisma: PrismaClient) {
           note: r.status === "FAILED" ? null : r.decisionNote ?? null,
         },
       });
+      const pendingApproval = { ...approval, status: "PENDING", decidedBy: null, decidedAt: null, note: null };
       await tx.auditEvent.create({
-        data: { at: createdAt, actor: "user_maker", app, entity: "ApprovalRequest", entityId: approval.id, action: "APPROVAL_REQUESTED", after: approval, requestId },
+        data: { at: createdAt, actor: "user_maker", app, entity: "ApprovalRequest", entityId: approval.id, action: "APPROVAL_REQUESTED", after: pendingApproval, requestId },
       });
       if (decided && refund.decidedAt) {
         const decidedState = { ...pending, status: decision, decidedBy: refund.decidedBy, decidedAt: refund.decidedAt, decisionNote: r.status === "FAILED" ? null : refund.decisionNote };
         await tx.auditEvent.createMany({
           data: [
-            { at: refund.decidedAt, actor: refund.decidedBy!, app, entity: "ApprovalRequest", entityId: approval.id, action: `APPROVAL_${decision}`, before: { ...approval, status: "PENDING" }, after: approval, requestId: crypto.randomUUID() },
+            { at: refund.decidedAt, actor: refund.decidedBy!, app, entity: "ApprovalRequest", entityId: approval.id, action: `APPROVAL_${decision}`, before: pendingApproval, after: approval, requestId: crypto.randomUUID() },
             { at: refund.decidedAt, actor: refund.decidedBy!, app, entity, entityId: refund.id, action: `REFUND_${decision}`, before: pending, after: decidedState, requestId: crypto.randomUUID() },
           ],
         });
@@ -103,8 +105,8 @@ export async function seedRefunds(prisma: PrismaClient) {
           const execRequestId = crypto.randomUUID();
           await tx.auditEvent.createMany({
             data: [
-              { at: execAt, actor: refund.decidedBy!, app, entity, entityId: refund.id, action: "REFUND_EXECUTION_STARTED", before: decidedState, after: { ...decidedState, idempotencyKey: refund.idempotencyKey }, requestId: execRequestId },
-              { at: new Date(execAt.getTime() + 1000), actor: refund.decidedBy!, app, entity, entityId: refund.id, action: `REFUND_${r.status}`, before: { ...decidedState, idempotencyKey: refund.idempotencyKey }, after: refund, requestId: execRequestId },
+              { at: execAt, actor: refund.decidedBy!, app, entity, entityId: refund.id, action: "REFUND_EXECUTION_STARTED", before: decidedState, after: { ...decidedState, status: "EXECUTING", idempotencyKey: refund.idempotencyKey, executionStartedAt: execAt }, requestId: execRequestId },
+              { at: new Date(execAt.getTime() + 1000), actor: refund.decidedBy!, app, entity, entityId: refund.id, action: `REFUND_${r.status}`, before: { ...decidedState, status: "EXECUTING", idempotencyKey: refund.idempotencyKey, executionStartedAt: execAt }, after: refund, requestId: execRequestId },
             ],
           });
         }
