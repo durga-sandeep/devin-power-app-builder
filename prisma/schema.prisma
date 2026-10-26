@@ -13,3 +13,37 @@ model User {
   email String @unique
   role  String // viewer | maker | checker | admin
 }
+
+/// Append-only. No code path may update or delete rows (see AGENTS.md rule 3).
+model AuditEvent {
+  id        String   @id @default(cuid())
+  at        DateTime @default(now())
+  actor     String // User.id
+  app       String
+  entity    String
+  entityId  String
+  action    String
+  before    Json?
+  after     Json?
+  requestId String
+
+  @@index([app, entity, entityId])
+}
+
+/// Maker-checker primitive. One row per sensitive action awaiting a decision.
+model ApprovalRequest {
+  id          String    @id @default(cuid())
+  app         String
+  entity      String
+  entityId    String
+  action      String
+  payload     Json?
+  status      String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  requestedBy String // User.id
+  requestedAt DateTime  @default(now())
+  decidedBy   String?
+  decidedAt   DateTime?
+  note        String?
+
+  @@index([app, entity, entityId])
+}
