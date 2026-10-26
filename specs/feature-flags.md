@@ -26,5 +26,16 @@ Engineers and ops toggle product feature flags per environment, with history and
 ## Seed
 - 10 flags with mixed states, two with pending production changes.
 
+## Edge cases
+- A production change with a pending approval: a second proposal for the same flag/environment is
+  refused until the first is decided. Staging changes never queue.
+- Kill switch while a production approval is pending: the pending approval is auto-rejected with
+  note "superseded by emergency disable", and that rejection is audited.
+- `enabled=false` with `rolloutPercent>0` is allowed (flag is off; the percent is remembered).
+  `enabled=true` with `rolloutPercent=0` is refused with a validation error.
+- Archived flags are read-only in both environments; kill switch on an archived flag is a no-op.
+- A maker may propose a production change and a different checker approves it; the same person
+  may never do both. Admin may approve a change they did not propose.
+
 ## Out of scope
 - SDK/evaluation API, targeting rules, per-user overrides.
