@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { assertDevLoginAllowed, DEV_SESSION_SECRET, ForbiddenError, getCurrentUser, requireRole, signSession } from "@/lib/platform/auth";
 import { audit, newRequestId } from "@/lib/platform/audit";
-import { decide, requestApproval } from "@/lib/platform/approvals";
+import { decide, requestApproval, supersede } from "@/lib/platform/approvals";
 import { actAs, tamperedCookie, USERS } from "./helpers";
 
 describe("auth", () => {
@@ -126,6 +126,47 @@ describe("approvals", () => {
       );
     await run(USERS.checker);
     await expect(run(USERS.admin)).rejects.toThrow(/already APPROVED/);
+  });
+
+  const supersedeAs = (approvalId: string, actor: string, note: string) =>
+    prisma.$transaction((tx) => supersede(tx, approvalId, note, { actor: { id: actor }, requestId: newRequestId() }));
+  const trailOf = (approvalId: string) =>
+    prisma.auditEvent.findMany({ where: { entity: "ApprovalRequest", entityId: approvalId }, orderBy: { at: "asc" } });
+
+  it("supersede rejects a PENDING request, even by its requester, and audits it", async () => {
+    const approval = await newApproval(USERS.admin);
+    const after = await supersedeAs(approval.id, USERS.admin, "  superseded by test  ");
+    expect(after).toMatchObject({ status: "REJECTED", decidedBy: USERS.admin, note: "superseded by test" });
+    const trail = await trailOf(approval.id);
+    expect(trail.map((e) => e.action)).toEqual(["APPROVAL_REQUESTED", "APPROVAL_REJECTED"]);
+    expect(trail[1]).toMatchObject({ actor: USERS.admin, app: "test", before: { status: "PENDING" }, after: { status: "REJECTED" } });
+  });
+
+  it("supersede is a no-op on a decided request: no change, no audit row", async () => {
+    const approval = await newApproval(USERS.maker);
+    await prisma.$transaction((tx) =>
+      decide(tx, { approvalId: approval.id, decider: { id: USERS.checker }, decision: "APPROVED", requestId: newRequestId() }),
+    );
+    expect(await supersedeAs(approval.id, USERS.admin, "too late")).toBeNull();
+    expect(await prisma.approvalRequest.findUnique({ where: { id: approval.id } })).toMatchObject({ status: "APPROVED", decidedBy: USERS.checker });
+    expect((await trailOf(approval.id)).map((e) => e.action)).toEqual(["APPROVAL_REQUESTED", "APPROVAL_APPROVED"]);
+  });
+
+  it("supersede requires a note and an existing request", async () => {
+    const approval = await newApproval(USERS.maker);
+    await expect(supersedeAs(approval.id, USERS.admin, "   ")).rejects.toThrow(/note is required/);
+    await expect(supersedeAs("does-not-exist", USERS.admin, "x")).rejects.toThrow(/not found/);
+    expect((await prisma.approvalRequest.findUnique({ where: { id: approval.id } }))?.status).toBe("PENDING");
+  });
+
+  it("a superseded request can no longer be decided", async () => {
+    const approval = await newApproval(USERS.maker);
+    await supersedeAs(approval.id, USERS.admin, "superseded");
+    await expect(
+      prisma.$transaction((tx) =>
+        decide(tx, { approvalId: approval.id, decider: { id: USERS.checker }, decision: "APPROVED", requestId: newRequestId() }),
+      ),
+    ).rejects.toThrow(/already REJECTED/);
   });
 });
 
