@@ -67,3 +67,30 @@ model RefundRequest {
 
   @@index([status])
 }
+
+model FeatureFlag {
+  id          String      @id @default(cuid())
+  key         String      @unique // kebab-case
+  description String
+  owner       String
+  createdBy   String // User.id
+  createdAt   DateTime    @default(now())
+  archivedAt  DateTime? // archived flags are read-only
+  archivedBy  String?
+  states      FlagState[]
+}
+
+model FlagState {
+  id                String      @id @default(cuid())
+  flagId            String
+  flag              FeatureFlag @relation(fields: [flagId], references: [id])
+  environment       String // staging | production
+  enabled           Boolean     @default(false)
+  rolloutPercent    Int         @default(0) // 0-100
+  updatedBy         String // User.id
+  updatedAt         DateTime    @default(now())
+  /// Set while a production change awaits approval. Claimed atomically, so at most one pending change per flag/environment.
+  pendingApprovalId String?     @unique
+
+  @@unique([flagId, environment])
+}

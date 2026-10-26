@@ -3,6 +3,7 @@ import { PageShell } from "@/lib/platform/ui/PageShell";
 
 export const APPS: { href: string; name: string; description: string }[] = [
   { href: "/refunds", name: "Refunds", description: "Review, approve and execute customer refund requests." },
+  { href: "/feature-flags", name: "Feature flags", description: "Toggle flags per environment; production changes need approval; emergency off." },
 ];
 
 export default function Home() {

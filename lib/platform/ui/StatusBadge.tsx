@@ -6,6 +6,10 @@ const TONES: Record<string, string> = {
   EXECUTING: "bg-indigo-100 text-indigo-800",
   EXECUTED: "bg-green-100 text-green-800",
   FAILED: "bg-red-100 text-red-800",
+  // on/off
+  ON: "bg-green-100 text-green-800",
+  OFF: "bg-gray-100 text-gray-600",
+  ARCHIVED: "bg-gray-200 text-gray-600",
   // roles
   viewer: "bg-gray-100 text-gray-700",
   maker: "bg-sky-100 text-sky-800",
