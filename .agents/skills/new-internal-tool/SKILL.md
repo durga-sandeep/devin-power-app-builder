@@ -16,7 +16,9 @@ You are adding a new internal tool to this repo. Arguments: `$1` = app name
    and which actions are "sensitive" (need maker-checker) or have external side effects (need an
    idempotency key). Post this list as your first checkpoint before writing code.
 2. Look at an existing app under `app/(apps)/` (e.g. `refunds`) and copy its structure. Reuse
-   `lib/platform/*`. Do not create new auth, audit, approval, or table components.
+   `lib/platform/*`. Do not create new auth, audit, approval, or table components. Pages live at
+   `/$1/...` (the folder name); if the spec's screen paths differ, use `/$1` and list it under
+   Assumptions in the PR.
 3. Add Prisma models for the new entities. Run a migration. Extend `prisma/seed.ts` with realistic
    sample rows (the number the spec asks for; default 8) and make sure seeded users cover every role
    used by this app.
@@ -28,9 +30,13 @@ You are adding a new internal tool to this repo. Arguments: `$1` = app name
 5. Wire every mutation through `requireRole()`, write `AuditEvent` in the same transaction, route
    sensitive actions through `requestApproval()` / `decide()`, and add idempotency keys where the spec
    says an action has an external effect.
-6. Write tests per the Testing rules in `AGENTS.md`. Run `pnpm test` and `pnpm lint` until green.
+6. Write tests per the Testing rules in `AGENTS.md`. Run `pnpm test`, `pnpm lint` and `pnpm typecheck` until green.
 7. Run `pnpm dev`, log in as each relevant role, exercise the main flow in the browser, and take
-   screenshots of: the list view, a denied action for an unauthorized role, and the audit trail.
+   screenshots of: the list view, the role-restricted view an unauthorized role sees, and the audit
+   trail. The UI hides forbidden actions and the page re-renders after a denied action, so the 403
+   text never appears on screen. Prove a denial from the server side instead: submit the real server
+   action with a lower role's cookie, check the response carries `status: 403`, and confirm in the DB
+   that nothing changed and no audit row was written.
 8. Add the app to the home page nav. Add a short section to `README.md` under "Apps".
 9. Open a PR titled `feat($1): <one line>`. In the body: assumptions you made, what you verified,
    screenshots, and the time you started and finished.
@@ -38,7 +44,7 @@ You are adding a new internal tool to this repo. Arguments: `$1` = app name
     slowed you down, with a concrete proposed edit. If you can, propose the skill edit directly.
 
 ## Specifications (must be true when you finish)
-- `pnpm db:reset && pnpm test && pnpm lint` pass from a clean clone.
+- `pnpm db:reset && pnpm test && pnpm lint && pnpm typecheck` pass from a clean clone.
 - No mutation is reachable without a server-side role check.
 - Every mutation produces an audit row; no code path updates or deletes audit rows.
 - Maker cannot approve their own request. Repeating an idempotency key does not double-execute.
