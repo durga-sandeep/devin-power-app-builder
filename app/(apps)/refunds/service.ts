@@ -83,6 +83,7 @@ export async function decideRefund(id: string, decision: "APPROVED" | "REJECTED"
   if (!refund) throw new Error("Refund not found");
   const user = await requireRole(...deciderRoles(refund));
   if (refund.status !== "PENDING") throw new Error(`Refund is already ${refund.status}`);
+  if (decision === "REJECTED" && !note?.trim()) throw new Error("A decision note is required to reject a refund");
   const requestId = newRequestId();
   return prisma.$transaction(async (tx) => {
     const approval = await pendingApprovalFor(tx, { app: APP, entity: ENTITY, entityId: id });

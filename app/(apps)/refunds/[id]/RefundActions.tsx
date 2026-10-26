@@ -35,7 +35,7 @@ export function RefundActions({
         <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Decision</h2>
         <ActionForm action={decideRefundAction} className="mt-4 space-y-3">
           <input type="hidden" name="id" value={refundId} />
-          <FormField label="Decision note" name="note" type="textarea" rows={2} placeholder="Optional for approve, recommended for reject" />
+          <FormField label="Decision note" name="note" type="textarea" rows={2} placeholder="Required to reject, optional to approve" />
           <div className="flex gap-3">
             <button type="submit" name="decision" value="APPROVED" className={`${btn} bg-green-700 text-white hover:bg-green-600`}>
               Approve
