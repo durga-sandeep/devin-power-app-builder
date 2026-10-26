@@ -21,7 +21,11 @@ export default async function RefundDetailPage(props: PageProps<"/refunds/[id]">
                 <div>
                   <div className="text-3xl font-semibold tabular-nums">{formatMoney(detail.refund.amountCents, detail.refund.currency)}</div>
                   <div className="mt-1 text-sm text-gray-500">
-                    {detail.refund.amountCents > ADMIN_APPROVAL_THRESHOLD_CENTS ? "Over $5,000: admin approval required" : "Checker or admin may approve"}
+                    {detail.refund.status !== "PENDING"
+                      ? `${detail.refund.status.toLowerCase()} · decided by ${detail.names.get(detail.refund.decidedBy ?? "") ?? "—"}`
+                      : detail.refund.amountCents > ADMIN_APPROVAL_THRESHOLD_CENTS
+                        ? "Over $5,000: admin approval required"
+                        : "Checker or admin may approve"}
                   </div>
                 </div>
                 <StatusBadge value={detail.refund.status} />
