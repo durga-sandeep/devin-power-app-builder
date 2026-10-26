@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 
 /**
  * Append-only audit log. The only exported operation is `audit()` (an insert). There is
- * deliberately no update/delete helper, and no app may call prisma.auditEvent.update/delete.
+ * deliberately no update or delete helper, and no app may mutate AuditEvent rows directly.
  */
 export type AuditInput = {
   actor: string;

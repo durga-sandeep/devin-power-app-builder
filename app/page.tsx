@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PageShell } from "@/lib/platform/ui/PageShell";
 
 export const APPS: { href: string; name: string; description: string }[] = [
-  // apps append here
+  { href: "/refunds", name: "Refunds", description: "Review, approve and execute customer refund requests." },
 ];
 
 export default function Home() {

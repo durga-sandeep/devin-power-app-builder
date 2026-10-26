@@ -8,7 +8,7 @@ import { StatusBadge } from "./StatusBadge";
 
 export const NAV = [
   { href: "/", label: "Home" },
-  // apps append here
+  { href: "/refunds", label: "Refunds" },
 ];
 
 /** Common frame for every page: nav, current user + role, Request change button. Redirects to login. */

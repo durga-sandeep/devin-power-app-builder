@@ -47,3 +47,22 @@ model ApprovalRequest {
 
   @@index([app, entity, entityId])
 }
+
+model RefundRequest {
+  id             String    @id @default(cuid())
+  customerRef    String
+  orderRef       String
+  amountCents    Int
+  currency       String    @default("USD")
+  reason         String
+  status         String    @default("PENDING") // PENDING | APPROVED | REJECTED | EXECUTED | FAILED
+  createdBy      String // User.id
+  createdAt      DateTime  @default(now())
+  decidedBy      String?
+  decidedAt      DateTime?
+  decisionNote   String?
+  idempotencyKey String?   @unique // set when execution is claimed
+  externalRef    String? // from the payment provider
+
+  @@index([status])
+}
