@@ -61,5 +61,8 @@ specs/<app-name>.md             short human-written spec per app
 - If a requirement is ambiguous, pick the simplest option, state the assumption in the PR, continue.
 - Never add dependencies beyond the stack above without listing them in the PR description.
 - Never put secrets in the repo. There are none needed for local dev: `.env` (SQLite `DATABASE_URL`,
-  a dev-only `SESSION_SECRET`, `NEXT_PUBLIC_REPO_URL`) is committed so `pnpm db:reset` works from a
-  clean clone; `.env*.local` is ignored and real secrets never land in git.
+  `NEXT_PUBLIC_REPO_URL`, and a `SESSION_SECRET` that only signs the dev-login cookie) is committed so
+  `pnpm db:reset` works from a clean clone. That committed value is public by definition: the dev login
+  is the SSO stand-in and must never run outside local dev. `auth.ts` refuses to start with the
+  committed value when `NODE_ENV=production`; deployments set `SESSION_SECRET` from the environment.
+  `.env*.local` is ignored and real secrets never land in git.
