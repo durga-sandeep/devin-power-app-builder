@@ -1,0 +1,69 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id    String @id @default(cuid())
+  name  String
+  email String @unique
+  role  String // viewer | maker | checker | admin
+}
+
+/// Append-only. No code path may update or delete rows (see AGENTS.md rule 3).
+model AuditEvent {
+  id        String   @id @default(cuid())
+  at        DateTime @default(now())
+  actor     String // User.id
+  app       String
+  entity    String
+  entityId  String
+  action    String
+  before    Json?
+  after     Json?
+  requestId String
+
+  @@index([app, entity, entityId])
+}
+
+/// Maker-checker primitive. One row per sensitive action awaiting a decision.
+model ApprovalRequest {
+  id          String    @id @default(cuid())
+  app         String
+  entity      String
+  entityId    String
+  action      String
+  payload     Json?
+  status      String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  requestedBy String // User.id
+  requestedAt DateTime  @default(now())
+  decidedBy   String?
+  decidedAt   DateTime?
+  note        String?
+
+  @@index([app, entity, entityId])
+}
+
+model RefundRequest {
+  id             String    @id @default(cuid())
+  customerRef    String
+  orderRef       String
+  amountCents    Int
+  currency       String    @default("USD")
+  reason         String
+  status         String    @default("PENDING") // PENDING | APPROVED | REJECTED | EXECUTING | EXECUTED | FAILED
+  createdBy      String // User.id
+  createdAt      DateTime  @default(now())
+  decidedBy      String?
+  decidedAt      DateTime?
+  decisionNote   String?
+  idempotencyKey     String?   @unique // set when execution is claimed
+  executionStartedAt DateTime? // set with the claim; lets an interrupted execution be resumed
+  externalRef    String? // from the payment provider
+
+  @@index([status])
+}

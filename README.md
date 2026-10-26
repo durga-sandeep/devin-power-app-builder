@@ -26,6 +26,18 @@ pnpm test && pnpm lint
 ## Apps
 <!-- Devin appends a section per app -->
 
+### Refunds (`/refunds`)
+Spec: [`specs/refunds.md`](specs/refunds.md). Code: `app/(apps)/refunds/`, fake provider in `lib/payments/fake.ts`.
+
+| Action | Roles | Control |
+|---|---|---|
+| List / view | all | login required |
+| Create | maker, admin | writes `RefundRequest` + `ApprovalRequest` + audit row in one transaction |
+| Approve / reject | checker, admin; **> $5,000 admin only** | `decide()` refuses the requester (maker-checker) |
+| Execute | checker, admin, only from `APPROVED` | idempotency key claimed on the row before the provider call; repeat key returns the stored result |
+
+The fake provider sleeps 200 ms and fails any amount ending in `.13` (refund becomes `FAILED`, audited as `REFUND_FAILED`).
+
 ## Time and cost log (honest numbers)
 | # | Session | What | Wall time | ACUs / credits | Devin Review findings | Human edits before merge | Link |
 |---|---------|------|-----------|----------------|-----------------------|--------------------------|------|
