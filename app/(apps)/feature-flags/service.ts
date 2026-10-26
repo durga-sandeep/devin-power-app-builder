@@ -2,7 +2,7 @@ import { Prisma, type FeatureFlag, type FlagState } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requireRole, type CurrentUser, type Role } from "@/lib/platform/auth";
 import { audit, newRequestId } from "@/lib/platform/audit";
-import { decide, requestApproval, type Decision } from "@/lib/platform/approvals";
+import { decide, requestApproval, supersede, type Decision } from "@/lib/platform/approvals";
 
 export const APP = "feature-flags";
 export const ENVIRONMENTS = ["staging", "production"] as const;
@@ -225,7 +225,7 @@ export async function killSwitch(key: string, reason: string) {
         data: { enabled: false, rolloutPercent: 0, updatedBy: user.id, updatedAt: new Date(), pendingApprovalId: null },
       });
       if (count !== 1) return { done: false as const, state: null };
-      if (before.pendingApprovalId) await supersede(tx, before.pendingApprovalId, user, SUPERSEDED_BY_EMERGENCY, requestId);
+      if (before.pendingApprovalId) await supersede(tx, before.pendingApprovalId, SUPERSEDED_BY_EMERGENCY, { actor: user, requestId });
       const after = await tx.flagState.findUniqueOrThrow({ where: { id: before.id } });
       await audit(tx, {
         actor: user.id,
@@ -261,28 +261,11 @@ export async function archiveFlag(key: string) {
     for (const state of after.states) {
       if (!state.pendingApprovalId) continue;
       await tx.flagState.update({ where: { id: state.id }, data: { pendingApprovalId: null } });
-      await supersede(tx, state.pendingApprovalId, user, SUPERSEDED_BY_ARCHIVE, requestId);
+      await supersede(tx, state.pendingApprovalId, SUPERSEDED_BY_ARCHIVE, { actor: user, requestId });
     }
     await audit(tx, { actor: user.id, app: APP, entity: "FeatureFlag", entityId: after.id, action: "FLAG_ARCHIVED", before, after: { ...after, states: undefined }, requestId });
     return after;
   });
-}
-
-/**
- * Auto-rejects a pending approval because an admin action made it moot. Not a maker-checker decision,
- * so it does not go through decide() (which would refuse when the admin is also the proposer); it is
- * recorded the same way: status REJECTED, decider, note, and an APPROVAL_REJECTED audit row.
- */
-async function supersede(tx: Tx, approvalId: string, actor: CurrentUser, note: string, requestId: string) {
-  const before = await tx.approvalRequest.findUnique({ where: { id: approvalId } });
-  if (!before || before.status !== "PENDING") return;
-  const { count } = await tx.approvalRequest.updateMany({
-    where: { id: approvalId, status: "PENDING" },
-    data: { status: "REJECTED", decidedBy: actor.id, decidedAt: new Date(), note },
-  });
-  if (count !== 1) return;
-  const after = await tx.approvalRequest.findUniqueOrThrow({ where: { id: approvalId } });
-  await audit(tx, { actor: actor.id, app: APP, entity: "ApprovalRequest", entityId: approvalId, action: "APPROVAL_REJECTED", before, after, requestId });
 }
 
 async function loadLiveFlag(tx: Tx, key: string) {
