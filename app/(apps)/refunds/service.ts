@@ -125,8 +125,15 @@ export async function executeRefund(id: string, idempotencyKey: string) {
     if (refund.idempotencyKey === idempotencyKey) {
       if (refund.status !== "EXECUTING") return { refund, proceed: false as const };
       if (!isStale(refund)) return { refund, proceed: false as const };
-      await audit(tx, { actor: user.id, app: APP, entity: ENTITY, entityId: id, action: "REFUND_EXECUTION_RESUMED", before: refund, after: refund, requestId });
-      return { refund, proceed: true as const };
+      // Renew the claim atomically so only one of several concurrent resumes proceeds.
+      const { count } = await tx.refundRequest.updateMany({
+        where: { id, status: "EXECUTING", idempotencyKey, executionStartedAt: refund.executionStartedAt },
+        data: { executionStartedAt: new Date() },
+      });
+      if (count !== 1) return { refund, proceed: false as const };
+      const renewed = await tx.refundRequest.findUniqueOrThrow({ where: { id } });
+      await audit(tx, { actor: user.id, app: APP, entity: ENTITY, entityId: id, action: "REFUND_EXECUTION_RESUMED", before: refund, after: renewed, requestId });
+      return { refund: renewed, proceed: true as const };
     }
     if (refund.status === "EXECUTING") throw new Error("Execution already in progress with a different key");
     if (refund.status !== "APPROVED") throw new Error(`Refund is ${refund.status}, not APPROVED`);

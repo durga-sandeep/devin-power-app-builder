@@ -229,6 +229,20 @@ describe("execute", () => {
     expect(actions.slice(-2)).toEqual(["REFUND_EXECUTION_RESUMED", "REFUND_EXECUTED"]);
   });
 
+  it("concurrent resumes of a stale execution call the provider once and audit one RESUMED", async () => {
+    const r = await approved(3300);
+    const key = crypto.randomUUID();
+    await prisma.refundRequest.update({ where: { id: r.id }, data: { status: "EXECUTING", idempotencyKey: key } });
+    await markInterrupted(r.id);
+    actAs("checker");
+    const results = await Promise.all([executeRefund(r.id, key), executeRefund(r.id, key), executeRefund(r.id, key)]);
+    expect(results.filter((x) => x.status === "EXECUTED")).toHaveLength(1);
+    expect(fakePayments.calls).toHaveLength(1);
+    const actions = (await trail(r.id)).map((e) => e.action);
+    expect(actions.filter((a) => a === "REFUND_EXECUTION_RESUMED")).toHaveLength(1);
+    expect(actions.filter((a) => a === "REFUND_EXECUTED")).toHaveLength(1);
+  });
+
   it("resuming after the provider already paid returns the provider's original ref (no duplicate refund)", async () => {
     const r = await approved(3200);
     const key = crypto.randomUUID();
