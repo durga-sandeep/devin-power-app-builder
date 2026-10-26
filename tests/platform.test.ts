@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
-import { ForbiddenError, getCurrentUser, requireRole } from "@/lib/platform/auth";
+import { DEV_SESSION_SECRET, ForbiddenError, getCurrentUser, requireRole, signSession } from "@/lib/platform/auth";
 import { audit, newRequestId } from "@/lib/platform/audit";
 import { decide, requestApproval } from "@/lib/platform/approvals";
 import { actAs, tamperedCookie, USERS } from "./helpers";
@@ -126,5 +126,22 @@ describe("approvals", () => {
       );
     await run(USERS.checker);
     await expect(run(USERS.admin)).rejects.toThrow(/already APPROVED/);
+  });
+});
+
+describe("session secret", () => {
+  it("refuses the committed dev secret in production", () => {
+    const env = process.env as Record<string, string | undefined>;
+    const prev = { NODE_ENV: env.NODE_ENV, SESSION_SECRET: env.SESSION_SECRET };
+    env.NODE_ENV = "production";
+    env.SESSION_SECRET = DEV_SESSION_SECRET;
+    try {
+      expect(() => signSession(USERS.viewer)).toThrow(/SESSION_SECRET/);
+      env.SESSION_SECRET = "a-real-secret";
+      expect(signSession(USERS.viewer)).toContain(".");
+    } finally {
+      env.NODE_ENV = prev.NODE_ENV;
+      env.SESSION_SECRET = prev.SESSION_SECRET;
+    }
   });
 });

@@ -20,8 +20,15 @@ export class ForbiddenError extends Error {
   }
 }
 
+/** The value committed in `.env`. It only ever signs the dev-login cookie and is public. */
+export const DEV_SESSION_SECRET = "dev-only-session-secret-change-in-prod";
+
 function secret() {
-  return process.env.SESSION_SECRET ?? "dev-only-session-secret";
+  const value = process.env.SESSION_SECRET ?? DEV_SESSION_SECRET;
+  if (process.env.NODE_ENV === "production" && value === DEV_SESSION_SECRET) {
+    throw new Error("SESSION_SECRET must be set to a non-default value in production");
+  }
+  return value;
 }
 
 function sign(value: string) {
