@@ -1,0 +1,25 @@
+name: Change request (from an app)
+description: Filed from the "Request change" button inside an internal tool
+title: "[<app>] <what you expected>"
+labels: ["change-request"]
+body:
+  - type: input
+    id: app
+    attributes: { label: App, placeholder: refunds }
+    validations: { required: true }
+  - type: input
+    id: screen
+    attributes: { label: Screen / URL }
+  - type: input
+    id: role
+    attributes: { label: Your role, placeholder: checker }
+  - type: textarea
+    id: expected
+    attributes: { label: What you expected }
+    validations: { required: true }
+  - type: textarea
+    id: actual
+    attributes: { label: What happened instead }
+  - type: dropdown
+    id: urgency
+    attributes: { label: Urgency, options: ["Nice to have", "This week", "Blocking my work"] }
