@@ -10,7 +10,9 @@ generic form/JSON-spec engine. Each app is ordinary code that reuses the platfor
   create-next-app default only produces Suspense/`instant` errors). `cookies()` is async: `await cookies()`.
 - Prisma + SQLite (`prisma/dev.db`). Seed data via `prisma/seed.ts`.
 - Tests: Vitest for unit/API-level tests. Playwright optional for one smoke test per app.
-- Package manager: pnpm. Scripts: `pnpm dev`, `pnpm test`, `pnpm lint`, `pnpm db:reset` (migrate + seed).
+- Package manager: pnpm. Scripts: `pnpm dev`, `pnpm test`, `pnpm lint`, `pnpm typecheck`
+  (`next typegen && tsc --noEmit`; plain `tsc` fails on a fresh clone without the generated route
+  types), `pnpm db:reset` (migrate + seed).
 
 ## Layout
 ```
@@ -23,6 +25,7 @@ lib/platform/ui/                DataTable, FormField, StatusBadge, PageShell, Re
 specs/<app-name>.md             short human-written spec per app
 .agents/skills/new-internal-tool/SKILL.md   the procedure for adding a new app
 ```
+An app's URL is `/<app-name>`, the same as its folder name. Specs refer to screens by that path.
 
 ## Platform rules (every app must follow)
 1. **Auth**: `getCurrentUser()` reads a signed cookie set by the dev login page. Users and roles are
@@ -52,7 +55,7 @@ specs/<app-name>.md             short human-written spec per app
   (c) an AuditEvent row exists with correct before/after.
 - Maker-checker: test that the maker cannot approve their own request.
 - Idempotent actions: test that a repeated key does not double-execute.
-- `pnpm test` and `pnpm lint` must pass before opening a PR.
+- `pnpm test`, `pnpm lint` and `pnpm typecheck` must pass before opening a PR.
 
 ## Working style
 - Small PRs, one app or one platform change per PR (exception: the first app may ship together
