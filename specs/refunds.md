@@ -27,5 +27,10 @@ platform primitives, so the controls matter more than the UI.
 - 12 refund requests across statuses, 4 users (one per role), amounts including one > $5,000 and
   one ending in .13.
 
+## Edge cases
+- `FAILED` is terminal in v1: there is no re-execute path; a failed refund needs a new request.
+- The checker who approved a request may also execute it. Only maker and checker must differ.
+- Exactly $5,000.00 may be approved by a checker; strictly more than $5,000.00 needs `admin`.
+
 ## Out of scope
 - Real payment integration, email notifications, pagination beyond 50 rows.

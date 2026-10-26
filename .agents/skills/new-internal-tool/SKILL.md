@@ -9,16 +9,22 @@ You are adding a new internal tool to this repo. Arguments: `$1` = app name
 (kebab-case), `$2` = path to the spec (default `specs/$1.md`). Read `AGENTS.md` first and follow it.
 
 ## Procedure
-1. Read `$2` and `AGENTS.md`. List the entities, the actions, which roles may perform each action,
+1. Read `$2` and `AGENTS.md`. Read the spec's "Edge cases" section first: it records the decisions
+   (terminal states, who may execute, threshold boundaries) you would otherwise have to assume. If the
+   spec has no such section, list the edge cases you had to decide and add them to the spec in your PR.
+   Then list the entities, the actions, which roles may perform each action,
    and which actions are "sensitive" (need maker-checker) or have external side effects (need an
    idempotency key). Post this list as your first checkpoint before writing code.
 2. Look at an existing app under `app/(apps)/` (e.g. `refunds`) and copy its structure. Reuse
    `lib/platform/*`. Do not create new auth, audit, approval, or table components.
 3. Add Prisma models for the new entities. Run a migration. Extend `prisma/seed.ts` with realistic
-   sample rows (at least 8) and make sure seeded users cover every role used by this app.
+   sample rows (the number the spec asks for; default 8) and make sure seeded users cover every role
+   used by this app.
 4. Build pages under `app/(apps)/$1/`: a list view using `DataTable`, a detail/edit view using
    `FormField`, and server actions for each mutation. Every page uses `PageShell` and renders
-   `RequestChangeButton`.
+   `RequestChangeButton`. In `"use client"` files import `FormField` / `ActionForm` by file
+   (`@/lib/platform/ui/FormField`), not from the `@/lib/platform/ui` barrel: it re-exports
+   `PageShell`, which pulls `next/headers` into the client bundle and 500s the page.
 5. Wire every mutation through `requireRole()`, write `AuditEvent` in the same transaction, route
    sensitive actions through `requestApproval()` / `decide()`, and add idempotency keys where the spec
    says an action has an external effect.
