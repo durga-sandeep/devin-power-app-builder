@@ -38,6 +38,21 @@ Spec: [`specs/refunds.md`](specs/refunds.md). Code: `app/(apps)/refunds/`, fake 
 
 The fake provider sleeps 200 ms and fails any amount ending in `.13` (refund becomes `FAILED`, audited as `REFUND_FAILED`).
 
+### Feature flags (`/feature-flags`)
+Spec: [`specs/feature-flags.md`](specs/feature-flags.md). Code: `app/(apps)/feature-flags/`. Lives at `/feature-flags` (not the spec's `/flags`) because AGENTS.md puts each app at its app name.
+
+| Action | Roles | Control |
+|---|---|---|
+| List / view / history | all | login required |
+| Create flag (both environments start OFF 0%) | maker, admin | audit `FLAG_CREATED` |
+| Change staging | maker, admin | applies immediately, audit `FLAG_STATE_CHANGED` with before/after |
+| Propose production change | maker, admin | `requestApproval()`; at most one pending per flag (claimed via unique `FlagState.pendingApprovalId`) |
+| Approve / reject production change | checker, admin | `decide()` refuses the proposer (maker-checker); approval applies the state in the same transaction |
+| Kill switch | admin only | reason required, production → OFF 0% immediately, audit `EMERGENCY_DISABLE`; pending production change auto-rejected ("superseded by emergency disable"); no-op on archived flags |
+| Archive | admin only | read-only afterwards; pending production change auto-rejected |
+
+`enabled=true` with `rolloutPercent=0` is rejected; `enabled=false` keeps the percentage. Seed: 10 flags, 2 pending production changes.
+
 ## Time and cost log (honest numbers)
 | # | Session | What | Wall time | ACUs / credits | Devin Review findings | Human edits before merge | Link |
 |---|---------|------|-----------|----------------|-----------------------|--------------------------|------|

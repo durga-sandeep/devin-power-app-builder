@@ -9,6 +9,7 @@ import { StatusBadge } from "./StatusBadge";
 export const NAV = [
   { href: "/", label: "Home" },
   { href: "/refunds", label: "Refunds" },
+  { href: "/feature-flags", label: "Feature flags" },
 ];
 
 /** Common frame for every page: nav, current user + role, Request change button. Redirects to login. */

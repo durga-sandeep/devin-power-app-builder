@@ -115,9 +115,119 @@ export async function seedRefunds(prisma: PrismaClient) {
   }
 }
 
+type Pair = [enabled: boolean, rolloutPercent: number];
+type SeedFlag = {
+  key: string;
+  description: string;
+  owner: string;
+  staging: Pair;
+  production: Pair;
+  /** Proposed production change still awaiting a decision. */
+  pending?: Pair;
+  emergency?: string;
+  archived?: boolean;
+};
+
+// 10 flags: mixed states, two pending production changes, one emergency-disabled, one archived.
+export const SEED_FLAGS: SeedFlag[] = [
+  { key: "new-checkout-flow", description: "Single-page checkout with saved cards", owner: "payments-team", staging: [true, 100], production: [true, 25], pending: [true, 50] },
+  { key: "instant-payouts", description: "Same-day merchant payouts via RTP", owner: "payouts-team", staging: [true, 100], production: [false, 0], pending: [true, 10] },
+  { key: "dark-mode", description: "Dark theme in the customer dashboard", owner: "web-team", staging: [true, 100], production: [true, 100] },
+  { key: "card-freeze-v2", description: "Self-service card freeze with reason codes", owner: "cards-team", staging: [true, 50], production: [false, 0] },
+  { key: "fx-rate-cache", description: "Cache FX quotes for 30s to cut provider calls", owner: "platform-team", staging: [true, 100], production: [true, 100] },
+  { key: "kyc-doc-autoverify", description: "Auto-verify passport scans under the risk threshold", owner: "risk-team", staging: [true, 20], production: [false, 0] },
+  { key: "sepa-instant", description: "SEPA Instant credit transfers", owner: "payments-team", staging: [true, 100], production: [true, 100], emergency: "Bank partner reporting duplicate credits" },
+  { key: "referral-bonus-2025", description: "2025 referral bonus campaign banner", owner: "growth-team", staging: [false, 0], production: [true, 100], archived: true },
+  { key: "smart-retry-ach", description: "Retry failed ACH debits on the predicted best day", owner: "payments-team", staging: [false, 30], production: [false, 0] },
+  { key: "statement-pdf-redesign", description: "New monthly statement PDF layout", owner: "web-team", staging: [true, 100], production: [true, 5] },
+];
+
+/** Creates flags with the approval rows and audit trail the real actions would have produced. */
+export async function seedFeatureFlags(prisma: PrismaClient) {
+  if ((await prisma.featureFlag.count()) > 0) return;
+  const app = "feature-flags";
+  const maker = "user_maker";
+  const checker = "user_checker";
+  const admin = "user_admin";
+  let t = Date.now() - SEED_FLAGS.length * 6 * 36e5;
+  const at = (minutes = 10) => new Date((t += minutes * 6e4));
+  const differs = (a: { enabled: boolean; rolloutPercent: number }, [enabled, rolloutPercent]: Pair) =>
+    a.enabled !== enabled || a.rolloutPercent !== rolloutPercent;
+
+  for (const f of SEED_FLAGS) {
+    t += 4 * 36e5;
+    await prisma.$transaction(async (tx) => {
+      const createdAt = at(0);
+      const flag = await tx.featureFlag.create({
+        data: {
+          key: f.key,
+          description: f.description,
+          owner: f.owner,
+          createdBy: maker,
+          createdAt,
+          states: { create: ["staging", "production"].map((environment) => ({ environment, updatedBy: maker, updatedAt: createdAt })) },
+        },
+        include: { states: true },
+      });
+      await tx.auditEvent.create({ data: { at: createdAt, actor: maker, app, entity: "FeatureFlag", entityId: flag.id, action: "FLAG_CREATED", after: flag, requestId: crypto.randomUUID() } });
+      let staging = flag.states.find((s) => s.environment === "staging")!;
+      let prod = flag.states.find((s) => s.environment === "production")!;
+
+      if (differs(staging, f.staging)) {
+        const before = staging;
+        staging = await tx.flagState.update({ where: { id: staging.id }, data: { enabled: f.staging[0], rolloutPercent: f.staging[1], updatedBy: maker, updatedAt: at() } });
+        await tx.auditEvent.create({ data: { at: staging.updatedAt, actor: maker, app, entity: "FlagState", entityId: staging.id, action: "FLAG_STATE_CHANGED", before, after: staging, requestId: crypto.randomUUID() } });
+      }
+
+      const propose = async (to: Pair) => {
+        const requestedAt = at();
+        const approval = await tx.approvalRequest.create({
+          data: {
+            app, entity: "FlagState", entityId: prod.id, action: "CHANGE_PRODUCTION_STATE", requestedBy: maker, requestedAt,
+            payload: { flagKey: f.key, environment: "production", from: { enabled: prod.enabled, rolloutPercent: prod.rolloutPercent }, to: { enabled: to[0], rolloutPercent: to[1] } },
+          },
+        });
+        await tx.auditEvent.create({ data: { at: requestedAt, actor: maker, app, entity: "ApprovalRequest", entityId: approval.id, action: "APPROVAL_REQUESTED", after: approval, requestId: crypto.randomUUID() } });
+        return approval;
+      };
+
+      if (differs(prod, f.production)) {
+        const approval = await propose(f.production);
+        const decidedAt = at();
+        const decided = await tx.approvalRequest.update({ where: { id: approval.id }, data: { status: "APPROVED", decidedBy: checker, decidedAt } });
+        const requestId = crypto.randomUUID();
+        await tx.auditEvent.create({ data: { at: decidedAt, actor: checker, app, entity: "ApprovalRequest", entityId: approval.id, action: "APPROVAL_APPROVED", before: approval, after: decided, requestId } });
+        const before = prod;
+        prod = await tx.flagState.update({ where: { id: prod.id }, data: { enabled: f.production[0], rolloutPercent: f.production[1], updatedBy: checker, updatedAt: decidedAt } });
+        await tx.auditEvent.create({ data: { at: decidedAt, actor: checker, app, entity: "FlagState", entityId: prod.id, action: "FLAG_STATE_CHANGED", before, after: prod, requestId } });
+      }
+
+      if (f.emergency) {
+        const before = prod;
+        prod = await tx.flagState.update({ where: { id: prod.id }, data: { enabled: false, rolloutPercent: 0, updatedBy: admin, updatedAt: at(60) } });
+        await tx.auditEvent.create({ data: { at: prod.updatedAt, actor: admin, app, entity: "FlagState", entityId: prod.id, action: "EMERGENCY_DISABLE", before, after: { ...prod, reason: f.emergency }, requestId: crypto.randomUUID() } });
+      }
+
+      if (f.pending) {
+        const approval = await propose(f.pending);
+        prod = await tx.flagState.update({ where: { id: prod.id }, data: { pendingApprovalId: approval.id } });
+      }
+
+      if (f.archived) {
+        const archivedAt = at(60 * 24);
+        const { states: _states, ...before } = flag;
+        void _states;
+        const after = await tx.featureFlag.update({ where: { id: flag.id }, data: { archivedAt, archivedBy: admin } });
+        await tx.auditEvent.create({ data: { at: archivedAt, actor: admin, app, entity: "FeatureFlag", entityId: flag.id, action: "FLAG_ARCHIVED", before, after, requestId: crypto.randomUUID() } });
+      }
+    });
+  }
+}
+
 export async function seed(prisma: PrismaClient) {
   await seedUsers(prisma);
   await seedRefunds(prisma);
+  await seedFeatureFlags(prisma);
 }
 
 if (process.argv[1]?.endsWith("seed.ts")) {
