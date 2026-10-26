@@ -3,9 +3,10 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { SESSION_COOKIE, signSession } from "@/lib/platform/auth";
+import { assertDevLoginAllowed, SESSION_COOKIE, signSession } from "@/lib/platform/auth";
 
 export async function loginAs(formData: FormData) {
+  assertDevLoginAllowed();
   const userId = String(formData.get("userId") ?? "");
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new Error("Unknown user");

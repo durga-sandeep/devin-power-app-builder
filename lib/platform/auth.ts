@@ -23,6 +23,16 @@ export class ForbiddenError extends Error {
 /** The value committed in `.env`. It only ever signs the dev-login cookie and is public. */
 export const DEV_SESSION_SECRET = "dev-only-session-secret-change-in-prod";
 
+/**
+ * The dev login page is the SSO stand-in. It must not be reachable in production unless explicitly
+ * enabled (e.g. a sealed demo environment) via ALLOW_DEV_LOGIN=1.
+ */
+export function assertDevLoginAllowed() {
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEV_LOGIN !== "1") {
+    throw new ForbiddenError("Dev login is disabled in production; sign in through SSO", 403);
+  }
+}
+
 function secret() {
   const value = process.env.SESSION_SECRET ?? DEV_SESSION_SECRET;
   if (process.env.NODE_ENV === "production" && value === DEV_SESSION_SECRET) {

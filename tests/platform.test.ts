@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
-import { DEV_SESSION_SECRET, ForbiddenError, getCurrentUser, requireRole, signSession } from "@/lib/platform/auth";
+import { assertDevLoginAllowed, DEV_SESSION_SECRET, ForbiddenError, getCurrentUser, requireRole, signSession } from "@/lib/platform/auth";
 import { audit, newRequestId } from "@/lib/platform/audit";
 import { decide, requestApproval } from "@/lib/platform/approvals";
 import { actAs, tamperedCookie, USERS } from "./helpers";
@@ -126,6 +126,26 @@ describe("approvals", () => {
       );
     await run(USERS.checker);
     await expect(run(USERS.admin)).rejects.toThrow(/already APPROVED/);
+  });
+});
+
+describe("dev login", () => {
+  it("is refused in production unless ALLOW_DEV_LOGIN=1", () => {
+    const env = process.env as Record<string, string | undefined>;
+    const prev = { NODE_ENV: env.NODE_ENV, ALLOW_DEV_LOGIN: env.ALLOW_DEV_LOGIN };
+    try {
+      env.NODE_ENV = "production";
+      delete env.ALLOW_DEV_LOGIN;
+      expect(() => assertDevLoginAllowed()).toThrow(ForbiddenError);
+      env.ALLOW_DEV_LOGIN = "1";
+      expect(() => assertDevLoginAllowed()).not.toThrow();
+      env.NODE_ENV = "test";
+      delete env.ALLOW_DEV_LOGIN;
+      expect(() => assertDevLoginAllowed()).not.toThrow();
+    } finally {
+      env.NODE_ENV = prev.NODE_ENV;
+      if (prev.ALLOW_DEV_LOGIN === undefined) delete env.ALLOW_DEV_LOGIN; else env.ALLOW_DEV_LOGIN = prev.ALLOW_DEV_LOGIN;
+    }
   });
 });
 
