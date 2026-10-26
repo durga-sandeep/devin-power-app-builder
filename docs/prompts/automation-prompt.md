@@ -1,6 +1,9 @@
-# Automation: GitHub issue labeled `devin` → session
+# Automation: GitHub issue labeled `change-request` → session
 
-Trigger: GitHub → Issues → label added → `devin` (repo: durga-sandeep/devin-power-app-builder).
+Trigger: GitHub → Issues → label added → `change-request` (repo: durga-sandeep/devin-power-app-builder).
+The issue template applies this label automatically, so the loop is hands-free from the button.
+In production you would gate on a triage label (e.g. `devin`) added by an engineer, plus an ACU
+budget on the automation. Say both in the Loom.
 Action: new session with this prompt (the issue payload is appended automatically):
 
 You are handling a change request filed by an ops user from inside an internal tool. Read AGENTS.md.

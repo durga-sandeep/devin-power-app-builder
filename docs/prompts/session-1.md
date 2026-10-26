@@ -11,7 +11,7 @@ Work in three checkpoints and report back after each one with what you verified.
 to continue unless something is blocked.
 
 Checkpoint 1 — Scaffold (target ~15 min)
-- Next.js 15 App Router + TypeScript + Tailwind + Prisma/SQLite + Vitest, pnpm. Scripts from
+- Current stable Next.js (App Router, create-next-app defaults) + TypeScript + Tailwind + Prisma/SQLite + Vitest, pnpm. Scripts from
   AGENTS.md (`dev`, `test`, `lint`, `db:reset`).
 - Dev login page: pick one of 4 seeded users (viewer, maker, checker, admin), sets a signed cookie.
 - Home page with nav and a PageShell that shows current user + role and a Request change button

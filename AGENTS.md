@@ -5,7 +5,7 @@ This repo is a THIN shared platform plus one plain-code app per tool. It is deli
 generic form/JSON-spec engine. Each app is ordinary code that reuses the platform primitives.
 
 ## Stack (do not change without asking)
-- Next.js 15 (App Router) + TypeScript, Tailwind for styling.
+- Current stable Next.js (App Router, whatever `create-next-app` installs today) + TypeScript, Tailwind.
 - Prisma + SQLite (`prisma/dev.db`). Seed data via `prisma/seed.ts`.
 - Tests: Vitest for unit/API-level tests. Playwright optional for one smoke test per app.
 - Package manager: pnpm. Scripts: `pnpm dev`, `pnpm test`, `pnpm lint`, `pnpm db:reset` (migrate + seed).
@@ -35,7 +35,9 @@ specs/<app-name>.md             short human-written spec per app
 5. **Idempotency**: any action with an external side effect (e.g. executing a refund) takes an
    idempotency key with a unique constraint and is safe to retry.
 6. **Request change**: every app page renders `RequestChangeButton`, which opens a prefilled GitHub
-   issue (app, screen, role, expected vs actual). Ops feedback flows back as issues.
+   issue (app, screen, role, expected vs actual) using the `change-request` template. Ops feedback
+   flows back as issues. Base URL comes from `NEXT_PUBLIC_REPO_URL`, default
+   `https://github.com/durga-sandeep/devin-power-app-builder`.
 
 ## Testing rules
 - For every mutation: (a) authorized happy path, (b) unauthorized role is rejected with 403,

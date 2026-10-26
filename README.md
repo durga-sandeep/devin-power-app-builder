@@ -4,9 +4,13 @@ Prototype built with Devin for a Cognition take-home: can a ~60-engineer fintech
 $250K/yr Power Apps estate with Devin-built internal tools?
 
 **What this is:** a thin shared platform (dev-login auth stand-in, roles, append-only audit log,
-maker-checker approvals, table/form UI) plus plain-code apps that reuse it. App #1 (refunds) was
-built by driving Devin by hand. App #2 (feature flags) was generated from the
-[`new-internal-tool` skill](.agents/skills/new-internal-tool/SKILL.md) in one session.
+maker-checker approvals, table/form UI) plus plain-code apps that reuse it. App #1 (refunds) is
+built by driving Devin by hand. App #2 (feature flags) is generated from the
+[`new-internal-tool` skill](.agents/skills/new-internal-tool/SKILL.md) in one timed session.
+<!-- switch to past tense once each has actually happened -->
+
+**Who wrote what:** the instructions in this repo (AGENTS.md, the skill, specs, prompts) were drafted
+with Claude and edited by me. All application code was written by Devin in the sessions linked below.
 
 **What this is not:** a Power Apps clone, a form/spec engine, or a KYC tool (deliberately not
 built: PII and field-level access is where Dataverse earns its fee).
