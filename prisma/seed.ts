@@ -69,7 +69,7 @@ export async function seedRefunds(prisma: PrismaClient) {
           executionStartedAt: r.status === "EXECUTED" || r.status === "FAILED" ? new Date(createdAt.getTime() + 9e5) : null,
         },
       });
-      const pending = { ...refund, status: "PENDING", decidedBy: null, decidedAt: null, decisionNote: null, idempotencyKey: null, externalRef: null };
+      const pending = { ...refund, status: "PENDING", decidedBy: null, decidedAt: null, decisionNote: null, idempotencyKey: null, externalRef: null, executionStartedAt: null };
       await tx.auditEvent.create({
         data: { at: createdAt, actor: "user_maker", app, entity, entityId: refund.id, action: "REFUND_CREATED", after: pending, requestId },
       });
