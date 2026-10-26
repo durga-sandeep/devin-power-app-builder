@@ -1,12 +1,11 @@
 import { defineConfig } from "vitest/config";
-import path from "node:path";
 
 export default defineConfig({
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "."),
+      "@": import.meta.dirname,
       // `import "server-only"` throws outside a React server bundle; tests run platform code directly.
-      "server-only": path.resolve(__dirname, "tests/empty.ts"),
+      "server-only": `${import.meta.dirname}/tests/empty.ts`,
     },
   },
   test: {
