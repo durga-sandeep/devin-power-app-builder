@@ -156,7 +156,7 @@ describe("approve / reject", () => {
   it("cannot decide twice", async () => {
     const r = await makerCreates();
     actAs("checker");
-    await decideRefund(r.id, "REJECTED");
+    await decideRefund(r.id, "REJECTED", "duplicate");
     actAs("admin");
     await expect(decideRefund(r.id, "APPROVED")).rejects.toThrow(/already REJECTED/);
   });
