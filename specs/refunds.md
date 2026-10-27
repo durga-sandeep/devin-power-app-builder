@@ -12,6 +12,7 @@ platform primitives, so the controls matter more than the UI.
 - List/view refunds: viewer, maker, checker, admin.
 - Create refund request: maker, admin. (Sensitive: creates an approval request.)
 - Approve / reject: checker, admin. Checker must not be the creator (maker-checker).
+  Rejecting requires a non-empty decision note; approving does not.
 - Execute approved refund: checker, admin. Calls a FAKE payment provider module
   (`lib/payments/fake.ts`) that sleeps 200ms and returns an externalRef; it throws on amounts that
   end in 13 cents so the FAILED path is testable. Takes an idempotency key; retry is safe.

@@ -101,6 +101,23 @@ describe("approve / reject", () => {
     expect((await trail(r.id)).map((e) => e.action)).toEqual(["REFUND_CREATED", "REFUND_REJECTED"]);
   });
 
+  it("rejecting without a decision note is refused and writes nothing", async () => {
+    const r = await makerCreates();
+    actAs("checker");
+    for (const note of [undefined, "", "   "]) {
+      await expect(decideRefund(r.id, "REJECTED", note)).rejects.toThrow(/decision note is required/);
+    }
+    expect((await prisma.refundRequest.findUnique({ where: { id: r.id } }))?.status).toBe("PENDING");
+    expect((await prisma.approvalRequest.findFirst({ where: { entityId: r.id } }))?.status).toBe("PENDING");
+    expect((await trail(r.id)).map((e) => e.action)).toEqual(["REFUND_CREATED"]);
+  });
+
+  it("an unauthorized role rejecting without a note still gets 403", async () => {
+    const r = await makerCreates();
+    actAs("viewer");
+    await expect(decideRefund(r.id, "REJECTED", "")).rejects.toMatchObject({ status: 403 });
+  });
+
   it("viewer and maker get 403", async () => {
     const r = await makerCreates();
     for (const role of ["viewer", "maker"] as const) {
@@ -139,7 +156,7 @@ describe("approve / reject", () => {
   it("cannot decide twice", async () => {
     const r = await makerCreates();
     actAs("checker");
-    await decideRefund(r.id, "REJECTED");
+    await decideRefund(r.id, "REJECTED", "duplicate");
     actAs("admin");
     await expect(decideRefund(r.id, "APPROVED")).rejects.toThrow(/already REJECTED/);
   });
